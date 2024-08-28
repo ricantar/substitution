@@ -1,4 +1,4 @@
-name: Run merged tests
+name: Run merged tests and tag release
 
 on:
   pull_request:
@@ -18,6 +18,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
+      with:
+        fetch-depth: 0 
 
     - name: Set up Node.js ${{ matrix.node-version }}
       uses: actions/setup-node@v3
@@ -29,3 +31,31 @@ jobs:
 
     - name: Run tests
       run: npm test
+
+    - name: Get the latest tag
+      id: get_tag
+      run: |
+        # Get the latest tag from GitHub
+        LATEST_TAG=$(git describe --tags `git rev-list --tags --max-count=1`)
+        echo "Latest tag: $LATEST_TAG"
+        echo "LATEST_TAG=$LATEST_TAG" >> $GITHUB_ENV
+
+    - name: Increment the tag
+      id: increment_tag
+      run: |
+        if [ -z "$LATEST_TAG" ]; then
+          NEW_TAG="v1.0.0"
+        else
+          # Increment the patch version (e.g., v1.0.0 -> v1.0.1)
+          IFS='.' read -r -a TAG_PARTS <<< "${LATEST_TAG#v}"
+          NEW_TAG="v${TAG_PARTS[0]}.${TAG_PARTS[1]}.$((TAG_PARTS[2] + 1))"
+        fi
+        echo "New tag: $NEW_TAG"
+        echo "NEW_TAG=$NEW_TAG" >> $GITHUB_ENV
+
+    - name: Create and push new tag
+      run: |
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+        git tag ${{ env.NEW_TAG }}
+        git push origin ${{ env.NEW_TAG }}
