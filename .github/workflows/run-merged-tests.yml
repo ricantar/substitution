@@ -1,13 +1,11 @@
-name: Run Tests
+name: Run unit tests
 
-# This workflow will run on pushes to the repository
 on:
-  push:
-    branches:
-      - '*'
   pull_request:
     branches:
       - main
+    types:
+      - closed
 
 jobs:
   test:
