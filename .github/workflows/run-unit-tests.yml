@@ -4,8 +4,6 @@ on:
   push:
     branches-ignore:
       - main  # Ignore pushes directly to main, handled by PR merges
-    branches:
-      - '*'
 
 jobs:
   test:
