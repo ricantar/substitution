@@ -3,6 +3,8 @@ import { SwapController } from './swap.controller';
 import { SwapService } from './swap.service';
 import { of } from 'rxjs';
 import { SwapResponse } from './interfaces/swap.interface';
+import { TransactionResponse } from './interfaces/transaction.interface';
+import { BadRequestException } from '@nestjs/common';
 
 describe('SwapController', () => {
   let swapController: SwapController;
@@ -11,6 +13,7 @@ describe('SwapController', () => {
   beforeEach(async () => {
     const mockSwapService = {
       getQuote: jest.fn(),
+      getTransaction: jest.fn(),
     };
 
     const app: TestingModule = await Test.createTestingModule({
@@ -34,17 +37,6 @@ describe('SwapController', () => {
         blockNumber: '12345',
         buyAmount: '1000000000000000000',
         buyToken: '0xTokenBuyAddress',
-        fees: {
-          integratorFee: null,
-          zeroExFee: null,
-          gasFee: null,
-        },
-        issues: {
-          allowance: null,
-          balance: null,
-          simulationIncomplete: false,
-          invalidSourcesPassed: [],
-        },
         liquidityAvailable: true,
         minBuyAmount: '999000000000000000',
         route: {
@@ -54,16 +46,7 @@ describe('SwapController', () => {
         sellAmount: '1000000000000000000',
         sellToken: '0xTokenSellAddress',
         target: '0xTargetContractAddress',
-        tokenMetadata: {
-          buyToken: {
-            buyTaxBps: null,
-            sellTaxBps: null,
-          },
-          sellToken: {
-            buyTaxBps: null,
-            sellTaxBps: null,
-          },
-        },
+        totalNetworkFee: '1555000',
         trade: {
           type: 'settler_metatransaction',
           hash: '0xTradeHash',
@@ -91,6 +74,45 @@ describe('SwapController', () => {
           expect(response).toEqual(mockResponse);
           done();
         });
+    });
+  });
+
+  describe('getTransaction', () => {
+    it('should return a TransactionResponse', (done) => {
+      const mockTransactionResponse: TransactionResponse = {
+        approvalTransactions: [
+          {
+            status: 'failed',
+            reason: 'transaction_reverted',
+            transactions: [
+              {
+                hash: '0xTransactionHash1',
+                timestamp: 1628169203,
+                zid: '0xZid1',
+              },
+            ],
+            zid: '0xZid1',
+          },
+        ],
+        transactions: [
+          {
+            hash: '0xTransactionHash2',
+            timestamp: 1628169204,
+            zid: '0xZid2',
+          },
+        ],
+      };
+
+      jest.spyOn(swapService, 'getTransaction').mockReturnValue(of(mockTransactionResponse));
+
+      swapController.getTransaction('0xTransactionHash').subscribe((response) => {
+        expect(response).toEqual(mockTransactionResponse);
+        done();
+      });
+    });
+
+    it('should throw a BadRequestException if no txHash is provided', () => {
+      expect(() => swapController.getTransaction('')).toThrow(BadRequestException);
     });
   });
 });
