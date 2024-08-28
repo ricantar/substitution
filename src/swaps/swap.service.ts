@@ -4,12 +4,17 @@ import { AxiosResponse } from 'axios';
 import { Observable } from 'rxjs';
 import { map, catchError } from 'rxjs/operators';
 import { SwapResponse } from './interfaces/swap.interface';
+import { TOKEN_ADDRESS_MAP } from './utils/chains-map';
 
 @Injectable()
 export class SwapService {
   constructor(private readonly httpService: HttpService) { }
 
-  getQuote(chainId: string, buyToken: string, sellToken: string, sellAmount: string, taker: string): Observable<SwapResponse> {
+  getQuote(chainId: string, buyTokenTicker: string, sellTokenTicker: string, sellAmount: string, taker: string): Observable<SwapResponse> {
+
+    const buyToken = TOKEN_ADDRESS_MAP[buyTokenTicker.toUpperCase()]?.[chainId];
+    const sellToken = TOKEN_ADDRESS_MAP[sellTokenTicker.toUpperCase()]?.[chainId];
+
     if (!chainId || !buyToken || !sellToken || !sellAmount || !taker) {
       throw new BadRequestException('Missing required parameters');
     }
