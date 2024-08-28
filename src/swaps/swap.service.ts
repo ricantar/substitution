@@ -14,7 +14,7 @@ export class SwapService {
       throw new BadRequestException('Missing required parameters');
     }
 
-    const url = `http://api.0x.org/swap/permit2/quote?chainId=${chainId}&buyToken=${buyToken}&sellToken=${sellToken}&sellAmount=${sellAmount}&taker=${taker}`;
+    const url = `https://api.0x.org/swap/permit2/quote?chainId=${chainId}&buyToken=${buyToken}&sellToken=${sellToken}&sellAmount=${sellAmount}&taker=${taker}`;
 
     const headers = {
       '0x-api-key': process.env.API_KEY
