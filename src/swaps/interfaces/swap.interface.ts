@@ -3,16 +3,14 @@ export interface SwapResponse {
   blockNumber: string;
   buyAmount: string;
   buyToken: string;
-  fees: Fees;
-  issues: Issues;
   liquidityAvailable: boolean;
   minBuyAmount: string;
   route: Route;
   sellAmount: string;
   sellToken: string;
   target: string;
-  tokenMetadata: TokenMetadata;
   trade: Trade;
+  totalNetworkFee: string;
   zid: string;
 }
 
