@@ -2,10 +2,11 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { HttpService } from '@nestjs/axios';
 import { SwapService } from './swap.service';
 import { of, throwError } from 'rxjs';
-import { SwapResponse } from './interfaces/swap.interface';
-import { TransactionResponse } from './interfaces/transaction.interface';
+import { SwapResponse } from '@interfaces/swap.interface';
+import { TransactionResponse } from '@interfaces/transaction.interface';
 import { AxiosResponse } from 'axios';
 import { BadRequestException } from '@nestjs/common';
+import { ethers } from 'ethers';
 
 describe('SwapService', () => {
     let service: SwapService;
@@ -29,39 +30,54 @@ describe('SwapService', () => {
     });
 
     describe('getQuote', () => {
-        it('should return a SwapResponse', (done) => {
+        it('should return a SwapResponse', async () => {
             const mockSwapResponse: SwapResponse = {
-                approval: null,
-                blockNumber: '12345',
+                chainId: 1,
+                price: '1000',
+                guaranteedPrice: '999',
+                estimatedPriceImpact: '0.01',
+                to: '0xTargetContractAddress',
+                data: '0xSomeData',
+                value: '0',
+                gas: '21000',
+                estimatedGas: '21000',
+                gasPrice: '5000000000',
+                protocolFee: '0',
+                minimumProtocolFee: '0',
+                buyTokenAddress: '0xTokenBuyAddress',
+                sellTokenAddress: '0xTokenSellAddress',
                 buyAmount: '1000000000000000000',
-                buyToken: '0xTokenBuyAddress',
-                liquidityAvailable: true,
-                minBuyAmount: '999000000000000000',
-                route: {
-                    fills: [],
-                    tokens: [],
-                },
                 sellAmount: '1000000000000000000',
-                sellToken: '0xTokenSellAddress',
-                target: '0xTargetContractAddress',
-                totalNetworkFee: '1555000',
-                trade: {
-                    type: 'settler_metatransaction',
-                    hash: '0xTradeHash',
-                    eip712: {
-                        types: {},
-                        domain: {
-                            name: '0x',
-                            version: '1',
-                            chainId: 1,
-                            verifyingContract: '0xVerifyingContract',
-                            salt: '0xSalt',
-                        },
-                        primaryType: 'Trade',
-                        message: {},
+                sources: [
+                    {
+                        name: 'Uniswap',
+                        proportion: '1',
                     },
+                ],
+                orders: [
+                    {
+                        makerToken: '0xTokenBuyAddress',
+                        takerToken: '0xTokenSellAddress',
+                        makerAmount: '1000000000000000000',
+                        takerAmount: '1000000000000000000',
+                        fillData: {
+                            tokenAddressPath: ['0xTokenSellAddress', '0xTokenBuyAddress'],
+                            router: '0xRouterAddress',
+                        },
+                        source: 'Uniswap',
+                        sourcePathId: '0xPathId',
+                        type: 0,
+                    },
+                ],
+                allowanceTarget: '0xAllowanceTarget',
+                sellTokenToEthRate: '1',
+                buyTokenToEthRate: '1000',
+                fees: {
+                    zeroExFee: null,
                 },
-                zid: '0xZid',
+                grossPrice: '1000',
+                grossBuyAmount: '1000000000000000000',
+                grossSellAmount: '1000000000000000000',
             };
 
             const axiosResponse: AxiosResponse<SwapResponse> = {
@@ -74,95 +90,129 @@ describe('SwapService', () => {
 
             jest.spyOn(httpService, 'get').mockReturnValue(of(axiosResponse));
 
-            service.getQuote('1', 'ETH', 'DAI', '1000000000000000000', '0xTakerAddress').subscribe((response) => {
-                expect(response).toEqual(mockSwapResponse);
-                done();
-            });
+            const response = await service.getQuote('1', 'ETH', 'DAI', '1000000000000000000', '0xTakerAddress');
+            expect(response).toEqual(mockSwapResponse);
         });
 
-        it('should throw a BadRequestException if API call fails', (done) => {
+        it('should throw a BadRequestException if API call fails', async () => {
             const axiosErrorResponse: AxiosResponse<any> = {
-                data: 'Some error',
+                data: { message: 'Some error' },
                 status: 400,
                 statusText: 'Bad Request',
                 headers: {},
                 config: null
             };
 
-            jest.spyOn(httpService, 'get').mockReturnValue(throwError(() => axiosErrorResponse))
+            jest.spyOn(httpService, 'get').mockReturnValue(throwError(() => axiosErrorResponse));
 
-            service.getQuote('1', 'ETH', 'DAI', '10', '0xTakerAddress').subscribe({
-                next: () => { },
-                error: (error) => {
-                    expect(error).toBeInstanceOf(BadRequestException);
-                    expect(error.message).toBe('Error fetching quote');
-                    done();
-                },
+            await expect(service.getQuote('1', 'ETH', 'DAI', '10', '0xTakerAddress'))
+                .rejects
+                .toBeInstanceOf(BadRequestException);
+        });
+
+        it('should throw a BadRequestException for invalid tokens', async () => {
+            jest.spyOn(httpService, 'get').mockImplementation(() => {
+                throw new BadRequestException('Invalid token address');
             });
+
+            await expect(service.getQuote('1', 'INVALID_TOKEN', 'DAI', '1000000000000000000', '0xTakerAddress'))
+                .rejects
+                .toBeInstanceOf(BadRequestException);
+        });
+
+        it('should throw a BadRequestException for insufficient funds', async () => {
+            const axiosErrorResponse: AxiosResponse<any> = {
+                data: { message: 'Insufficient funds' },
+                status: 400,
+                statusText: 'Bad Request',
+                headers: {},
+                config: null
+            };
+
+            jest.spyOn(httpService, 'get').mockReturnValue(throwError(() => axiosErrorResponse));
+
+            await expect(service.getQuote('1', 'ETH', 'DAI', '10000000000000000000000000', '0xTakerAddress'))
+                .rejects
+                .toBeInstanceOf(BadRequestException);
+        });
+
+        it('should handle network errors gracefully', async () => {
+            jest.spyOn(httpService, 'get').mockReturnValue(throwError(() => new Error('Network error')));
+
+            await expect(service.getQuote('1', 'ETH', 'DAI', '1000000000000000000', '0xTakerAddress'))
+                .rejects
+                .toBeInstanceOf(BadRequestException);
         });
     });
 
     describe('getTransaction', () => {
-        it('should return a TransactionResponse', (done) => {
+        it('should return a TransactionResponse', async () => {
             const mockTransactionResponse: TransactionResponse = {
-                approvalTransactions: [
-                    {
-                        status: 'failed',
-                        reason: 'transaction_reverted',
-                        transactions: [
-                            {
-                                hash: '0xTransactionHash1',
-                                timestamp: 1628169203,
-                                zid: '0xZid1',
-                            },
-                        ],
-                        zid: '0xZid1',
-                    },
-                ],
-                transactions: [
-                    {
-                        hash: '0xTransactionHash2',
-                        timestamp: 1628169204,
-                        zid: '0xZid2',
-                    },
-                ],
+                hash: '0xTransactionHash',
+                blockHash: '0xBlockHash',
+                blockNumber: 12345678,
+                from: '0xFromAddress',
+                to: '0xToAddress',
+                gasUsed: '21000',
+                status: 'succeeded',
+                confirmations: 10,
+                timestamp: 1628169203,
             };
 
-            const axiosResponse: AxiosResponse<TransactionResponse> = {
-                data: mockTransactionResponse,
-                status: 200,
-                statusText: 'OK',
-                headers: {},
-                config: null
+            const providerMock = {
+                getTransaction: jest.fn().mockResolvedValue({
+                    hash: '0xTransactionHash',
+                    blockHash: '0xBlockHash',
+                    blockNumber: 12345678,
+                    from: '0xFromAddress',
+                    to: '0xToAddress',
+                    gasLimit: ethers.toBigInt(21000),
+                    confirmations: 10,
+                }),
+                getBlock: jest.fn().mockResolvedValue({
+                    timestamp: 1628169203,
+                }),
+                getTransactionCount: jest.fn().mockResolvedValue(10),
             };
 
-            jest.spyOn(httpService, 'get').mockReturnValue(of(axiosResponse));
+            jest.spyOn(ethers, 'getDefaultProvider').mockReturnValue(providerMock as any);
 
-            service.getTransaction('0xTransactionHash').subscribe((response) => {
-                expect(response).toEqual(mockTransactionResponse);
-                done();
-            });
+            const response = await service.getTransaction('0xTransactionHash', '1');
+            expect(response).toEqual(mockTransactionResponse);
         });
 
-        it('should throw a BadRequestException if API call fails', (done) => {
-            const axiosErrorResponse: AxiosResponse<any> = {
-                data: 'Some error',
-                status: 400,
-                statusText: 'Bad Request',
-                headers: {},
-                config: null
+        it('should throw a BadRequestException if transaction not found', async () => {
+            const providerMock = {
+                getTransaction: jest.fn().mockResolvedValue(null),
             };
 
-            jest.spyOn(httpService, 'get').mockReturnValue(throwError(() => axiosErrorResponse))
+            jest.spyOn(ethers, 'getDefaultProvider').mockReturnValue(providerMock as any);
 
-            service.getTransaction('0xInvalidTransactionHash').subscribe({
-                next: () => { },
-                error: (error) => {
-                    expect(error).toBeInstanceOf(BadRequestException);
-                    expect(error.message).toBe('Error fetching transaction details');
-                    done();
-                },
+            await expect(service.getTransaction('0xInvalidTransactionHash', '1'))
+                .rejects
+                .toBeInstanceOf(BadRequestException);
+        });
+
+        it('should throw a BadRequestException if provider call fails', async () => {
+            const providerMock = {
+                getTransaction: jest.fn().mockRejectedValue(new Error('Network error')),
+            };
+
+            jest.spyOn(ethers, 'getDefaultProvider').mockReturnValue(providerMock as any);
+
+            await expect(service.getTransaction('0xInvalidTransactionHash', '1'))
+                .rejects
+                .toBeInstanceOf(BadRequestException);
+        });
+
+        it('should throw a BadRequestException for network errors', async () => {
+            jest.spyOn(ethers, 'getDefaultProvider').mockImplementation(() => {
+                throw new Error('Network error');
             });
+
+            await expect(service.getTransaction('0xTransactionHash', '1'))
+                .rejects
+                .toBeInstanceOf(BadRequestException);
         });
     });
 });
