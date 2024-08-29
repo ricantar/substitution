@@ -1,9 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { SwapController } from './swap.controller';
 import { SwapService } from './swap.service';
-import { of } from 'rxjs';
-import { SwapResponse } from './interfaces/swap.interface';
-import { TransactionResponse } from './interfaces/transaction.interface';
+import { SwapResponse } from '@interfaces/swap.interface';
+import { TransactionResponse } from '@interfaces/transaction.interface';
 import { BadRequestException } from '@nestjs/common';
 
 describe('SwapController', () => {
@@ -31,88 +30,107 @@ describe('SwapController', () => {
   });
 
   describe('getQuote', () => {
-    it('should return a SwapResponse', (done) => {
+    it('should return a SwapResponse', async () => {
       const mockResponse: SwapResponse = {
-        approval: null,
-        blockNumber: '12345',
+        chainId: 1,
+        price: '1000',
+        guaranteedPrice: '999',
+        estimatedPriceImpact: '0.01',
+        to: '0xTargetContractAddress',
+        data: '0xSomeData',
+        value: '0',
+        gas: '21000',
+        estimatedGas: '21000',
+        gasPrice: '5000000000',
+        protocolFee: '0',
+        minimumProtocolFee: '0',
+        buyTokenAddress: '0xTokenBuyAddress',
+        sellTokenAddress: '0xTokenSellAddress',
         buyAmount: '1000000000000000000',
-        buyToken: '0xTokenBuyAddress',
-        liquidityAvailable: true,
-        minBuyAmount: '999000000000000000',
-        route: {
-          fills: [],
-          tokens: [],
-        },
         sellAmount: '1000000000000000000',
-        sellToken: '0xTokenSellAddress',
-        target: '0xTargetContractAddress',
-        totalNetworkFee: '1555000',
-        trade: {
-          type: 'settler_metatransaction',
-          hash: '0xTradeHash',
-          eip712: {
-            types: {},
-            domain: {
-              name: '0x',
-              version: '1',
-              chainId: 1,
-              verifyingContract: '0xVerifyingContract',
-              salt: '0xSalt',
-            },
-            primaryType: 'Trade',
-            message: {},
+        sources: [
+          {
+            name: 'Uniswap',
+            proportion: '1',
           },
+        ],
+        orders: [
+          {
+            makerToken: '0xTokenBuyAddress',
+            takerToken: '0xTokenSellAddress',
+            makerAmount: '1000000000000000000',
+            takerAmount: '1000000000000000000',
+            fillData: {
+              tokenAddressPath: ['0xTokenSellAddress', '0xTokenBuyAddress'],
+              router: '0xRouterAddress',
+            },
+            source: 'Uniswap',
+            sourcePathId: '0xPathId',
+            type: 0,
+          },
+        ],
+        allowanceTarget: '0xAllowanceTarget',
+        sellTokenToEthRate: '1',
+        buyTokenToEthRate: '1000',
+        fees: {
+          zeroExFee: null,
         },
-        zid: '0xZid',
+        grossPrice: '1000',
+        grossBuyAmount: '1000000000000000000',
+        grossSellAmount: '1000000000000000000',
       };
 
-      jest.spyOn(swapService, 'getQuote').mockReturnValue(of(mockResponse));
+      jest.spyOn(swapService, 'getQuote').mockResolvedValue(mockResponse);
 
-      swapController
-        .getQuote('1', '0xTokenBuyAddress', '0xTokenSellAddress', '1000000000000000000', '0xTakerAddress')
-        .subscribe((response) => {
-          expect(response).toEqual(mockResponse);
-          done();
-        });
+      const response = await swapController.getQuote(
+        '1',
+        'ETH',
+        'DAI',
+        '1000000000000000000',
+        '0xTakerAddress',
+      );
+      expect(response).toEqual(mockResponse);
+    });
+
+    it('should throw a BadRequestException if service throws an error', async () => {
+      jest.spyOn(swapService, 'getQuote').mockRejectedValue(new BadRequestException('Invalid parameters'));
+
+      await expect(
+        swapController.getQuote('1', 'ETH', 'DAI', '1000000000000000000', '0xTakerAddress')
+      ).rejects.toBeInstanceOf(BadRequestException);
     });
   });
 
   describe('getTransaction', () => {
-    it('should return a TransactionResponse', (done) => {
+    it('should return a TransactionResponse', async () => {
       const mockTransactionResponse: TransactionResponse = {
-        approvalTransactions: [
-          {
-            status: 'failed',
-            reason: 'transaction_reverted',
-            transactions: [
-              {
-                hash: '0xTransactionHash1',
-                timestamp: 1628169203,
-                zid: '0xZid1',
-              },
-            ],
-            zid: '0xZid1',
-          },
-        ],
-        transactions: [
-          {
-            hash: '0xTransactionHash2',
-            timestamp: 1628169204,
-            zid: '0xZid2',
-          },
-        ],
+        hash: '0xTransactionHash',
+        blockHash: '0xBlockHash',
+        blockNumber: 12345678,
+        from: '0xFromAddress',
+        to: '0xToAddress',
+        gasUsed: '21000',
+        status: 'succeeded',
+        confirmations: 10,
+        timestamp: 1628169203,
       };
 
-      jest.spyOn(swapService, 'getTransaction').mockReturnValue(of(mockTransactionResponse));
+      jest.spyOn(swapService, 'getTransaction').mockResolvedValue(mockTransactionResponse);
 
-      swapController.getTransaction('0xTransactionHash').subscribe((response) => {
-        expect(response).toEqual(mockTransactionResponse);
-        done();
-      });
+      const response = await swapController.getTransaction('0xTransactionHash', '1');
+      expect(response).toEqual(mockTransactionResponse);
+    });
+
+    it('should throw a BadRequestException if service throws an error', async () => {
+      jest.spyOn(swapService, 'getTransaction').mockRejectedValue(new BadRequestException('Transaction not found'));
+
+      await expect(swapController.getTransaction('0xInvalidTransactionHash', '1')).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
     });
 
     it('should throw a BadRequestException if no txHash is provided', () => {
-      expect(() => swapController.getTransaction('')).toThrow(BadRequestException);
+      expect(() => swapController.getTransaction('', '1')).toThrow(BadRequestException);
     });
   });
 });

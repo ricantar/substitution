@@ -10,6 +10,11 @@
     "sourceMap": true,
     "outDir": "./dist",
     "baseUrl": "./",
+    "paths": {
+      "@dto/*": ["src/swaps/dto/*"],
+      "@interfaces/*": ["src/swaps/interfaces/*"],
+      "@utils/*": ["src/utils/*"]
+    },
     "incremental": true,
     "skipLibCheck": true,
     "strictNullChecks": false,

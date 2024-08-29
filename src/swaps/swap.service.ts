@@ -1,17 +1,18 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
-import { AxiosResponse } from 'axios';
-import { Observable } from 'rxjs';
-import { map, catchError } from 'rxjs/operators';
-import { SwapResponse } from './interfaces/swap.interface';
-import { TOKEN_ADDRESS_MAP } from '../utils/chains-map';
-import { TransactionResponse } from './interfaces/transaction.interface';
+import { lastValueFrom, Observable } from 'rxjs';
+import { SwapExecutionResponse, SwapResponse } from '@interfaces/swap.interface';
+import { TOKEN_ADDRESS_MAP } from '@utils/utils';
+import { TransactionResponse } from '@interfaces/transaction.interface';
+import { SwapDto } from '@dto/swap.dto';
+import { ethers } from 'ethers';
+import { getGroveCityRpcUrl } from '@utils/utils';
 
 @Injectable()
 export class SwapService {
   constructor(private readonly httpService: HttpService) { }
 
-  getQuote(chainId: string, buyTokenTicker: string, sellTokenTicker: string, sellAmount: string, taker: string): Observable<SwapResponse> {
+  async getQuote(chainId: string, buyTokenTicker: string, sellTokenTicker: string, sellAmount: string, taker: string): Promise<SwapResponse> {
 
     const buyToken = TOKEN_ADDRESS_MAP[buyTokenTicker.toUpperCase()]?.[chainId];
     const sellToken = TOKEN_ADDRESS_MAP[sellTokenTicker.toUpperCase()]?.[chainId];
@@ -20,73 +21,130 @@ export class SwapService {
       throw new BadRequestException('Missing required parameters');
     }
 
-    const url = `https://api.0x.org/swap/permit2/quote?chainId=${chainId}&buyToken=${buyToken}&sellToken=${sellToken}&sellAmount=${sellAmount}&taker=${taker}`;
+    const url = `https://api.0x.org/swap/v1/quote?chainId=${chainId}&buyToken=${buyToken}&sellToken=${sellToken}&sellAmount=${sellAmount}&taker=${taker}`;
 
     const headers = {
       '0x-api-key': process.env.ZEROX_API_KEY
     };
 
-    return this.httpService.get(url, { headers }).pipe(
-      map((response) => this.mapToSwapResponse(response.data)),
-      catchError((error) => {
-        throw new BadRequestException(error.response?.data || 'Error fetching quote');
-      }),
-    );
+    try {
+      const response = await lastValueFrom(this.httpService.get(url, { headers }));
+      return this.mapToSwapResponse(response.data);
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || 'Error fetching quote from 0x API';
+      throw new BadRequestException(errorMessage);
+    }
   }
 
-  getTransaction(txHash: string): Observable<TransactionResponse> {
-    const url = `https://api.0x.org/gasless/status/${txHash}`;
+  async getTransaction(txHash: string, chainId: string): Promise<TransactionResponse> {
+    try {
+      const groveEndpoint = getGroveCityRpcUrl(chainId);
+      const provider = ethers.getDefaultProvider(groveEndpoint);
 
-    const headers = {
-      '0x-api-key': process.env.ZEROX_API_KEY,
-    };
+      const transaction = await provider.getTransaction(txHash);
 
-    return this.httpService.get(url, { headers }).pipe(
-      map((response) => this.mapToTransactionResponse(response.data)),
-      catchError((error) => {
-        throw new BadRequestException(error.response?.data || 'Error fetching transaction details');
-      }),
-    );
+      if (!transaction) {
+        throw new BadRequestException('Transaction not found');
+      }
+
+      const confirmations = await provider.getTransactionCount(transaction.from);
+
+      return {
+        hash: transaction.hash,
+        blockHash: transaction.blockHash || '',
+        blockNumber: transaction.blockNumber || 0,
+        from: transaction.from,
+        to: transaction.to,
+        gasUsed: transaction.gasLimit.toString(),
+        status: confirmations > 0 ? 'succeeded' : 'pending',
+        confirmations: confirmations,
+        timestamp: (await provider.getBlock(transaction.blockNumber)).timestamp,
+      };
+    } catch (error) {
+      throw new BadRequestException(error.message || 'Error fetching transaction details');
+    }
   }
 
-  /* Parsing */
+
+  async executeSwap(swapDto: SwapDto): Promise<SwapExecutionResponse> {
+    const { chainId, buyToken, sellAmount, sellToken, walletAddress, privateKey } = swapDto;
+
+    try {
+      const quote: SwapResponse = await this.getQuote(chainId, buyToken, sellToken, sellAmount, walletAddress);
+
+      const groveEndpoint = getGroveCityRpcUrl(chainId);
+      const provider = ethers.getDefaultProvider(groveEndpoint);
+      const wallet = new ethers.Wallet(privateKey, provider);
+
+      const gasLimit = ethers.toBigInt(quote.estimatedGas);
+      const gasPrice = ethers.toBigInt(quote.gasPrice);
+
+      const transaction = {
+        to: quote.to,
+        data: quote.data,
+        value: ethers.toBigInt(quote.value),
+        gasLimit: gasLimit,
+        gasPrice: gasPrice,
+        nonce: await provider.getTransactionCount(wallet.address),
+        chainId: parseInt(chainId, 10),
+      };
+
+      const txResponse = await wallet.sendTransaction(transaction);
+
+      return {
+        tradeHash: txResponse.hash,
+        type: 'settler_metatransaction',
+      };
+    } catch (error) {
+      throw new BadRequestException(error.message || 'Error executing swap');
+    }
+  }
+
 
   private mapToSwapResponse(data: any): SwapResponse {
     return {
-      approval: data.approval,
-      blockNumber: data.blockNumber,
+      chainId: data.chainId,
+      price: data.price,
+      guaranteedPrice: data.guaranteedPrice,
+      estimatedPriceImpact: data.estimatedPriceImpact,
+      to: data.to,
+      data: data.data,
+      value: data.value,
+      gas: data.gas,
+      estimatedGas: data.estimatedGas,
+      gasPrice: data.gasPrice,
+      protocolFee: data.protocolFee,
+      minimumProtocolFee: data.minimumProtocolFee,
+      buyTokenAddress: data.buyTokenAddress,
+      sellTokenAddress: data.sellTokenAddress,
       buyAmount: data.buyAmount,
-      buyToken: data.buyToken,
-      liquidityAvailable: data.liquidityAvailable,
-      minBuyAmount: data.minBuyAmount,
-      route: data.route,
       sellAmount: data.sellAmount,
-      sellToken: data.sellToken,
-      totalNetworkFee: data.totalNetworkFee,
-      target: data.target,
-      trade: data.trade,
-      zid: data.zid,
-    } as SwapResponse;
-  }
-
-  private mapToTransactionResponse(data: any): TransactionResponse {
-    return {
-      approvalTransactions: data.approvalTransactions.map((approval: any) => ({
-        status: approval.status,
-        reason: approval.reason,
-        transactions: approval.transactions.map((transaction: any) => ({
-          hash: transaction.hash,
-          timestamp: transaction.timestamp,
-          zid: transaction.zid,
-        })),
-        zid: approval.zid,
+      sources: data.sources.map((source: any) => ({
+        name: source.name,
+        proportion: source.proportion,
       })),
-      transactions: data.transactions.map((transaction: any) => ({
-        hash: transaction.hash,
-        timestamp: transaction.timestamp,
-        zid: transaction.zid,
+      orders: data.orders.map((order: any) => ({
+        makerToken: order.makerToken,
+        takerToken: order.takerToken,
+        makerAmount: order.makerAmount,
+        takerAmount: order.takerAmount,
+        fillData: {
+          tokenAddressPath: order.fillData.tokenAddressPath,
+          router: order.fillData.router,
+        },
+        source: order.source,
+        sourcePathId: order.sourcePathId,
+        type: order.type,
       })),
-    } as TransactionResponse;
+      allowanceTarget: data.allowanceTarget,
+      sellTokenToEthRate: data.sellTokenToEthRate,
+      buyTokenToEthRate: data.buyTokenToEthRate,
+      fees: {
+        zeroExFee: data.fees.zeroExFee,
+      },
+      grossPrice: data.grossPrice,
+      grossBuyAmount: data.grossBuyAmount,
+      grossSellAmount: data.grossSellAmount,
+    };
   }
 }
-
