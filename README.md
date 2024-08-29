@@ -49,6 +49,13 @@ Create a .env file in the root of your project to store your environment variabl
 - RATE_LIMIT_WINDOW_MS: The time window you want the rate limit your api in MS. (default 1 sec)
 - RATE_LIMIT_MAX_REQUESTS: Number of request in that window (default 3)
 - RATE_LIMIT_MESSAGE: Message for the user
+- DB_HOST: The hostname where your PostgreSQL server is running (use "localhost" if it's running locally)
+- DB_PORT: The default port for PostgreSQL
+- DB_USERNAME: The username to connect to the PostgreSQL database (use "postgres" if you're using the default user)
+- DB_PASSWORD: The password for the PostgreSQL user
+- DB_NAME: The name of your database
+
+
 ```
 
 ## compile-and-run-the-project
@@ -198,6 +205,27 @@ Returns a TransactionResponse object containing details of the transaction, incl
 
 ```
 
+**GET /history**
+
+Description: Fetch the details of the transactions stored.
+
+Return an array of transacations"
+
+**Example**
+```
+[
+    {
+        "id": 1,
+        "chainId": "1",
+        "buyToken": "weth",
+        "sellToken": "eth",
+        "buyAmount": "100000000000000",
+        "sellAmount": "100000000000000",
+        "transactionHash": "0x3075bw6s5...",
+        "createdAt": "2024-08-28T06:53:33.167Z"
+    }
+]
+```
 
 ## assumptions-and-decisions
 

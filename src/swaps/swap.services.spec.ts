@@ -7,10 +7,14 @@ import { TransactionResponse } from '@interfaces/transaction.interface';
 import { AxiosResponse } from 'axios';
 import { BadRequestException } from '@nestjs/common';
 import { ethers } from 'ethers';
+import { Repository } from 'typeorm';
+import { Swap } from './swap.entity';
+import { getRepositoryToken } from '@nestjs/typeorm';
 
 describe('SwapService', () => {
     let service: SwapService;
     let httpService: HttpService;
+    let swapRepository: Repository<Swap>;
 
     beforeEach(async () => {
         const module: TestingModule = await Test.createTestingModule({
@@ -22,11 +26,16 @@ describe('SwapService', () => {
                         get: jest.fn(),
                     },
                 },
+                {
+                    provide: getRepositoryToken(Swap),
+                    useClass: Repository, 
+                  },
             ],
         }).compile();
 
         service = module.get<SwapService>(SwapService);
         httpService = module.get<HttpService>(HttpService);
+        swapRepository = module.get<Repository<Swap>>(getRepositoryToken(Swap));
     });
 
     describe('getQuote', () => {
@@ -214,5 +223,28 @@ describe('SwapService', () => {
                 .rejects
                 .toBeInstanceOf(BadRequestException);
         });
+    });
+
+    describe('History', () => {
+        it('should return historical data', async () => {
+            const mockSwapData: Swap[] = [
+              {
+                id: 1,
+                chainId: '1',
+                buyToken: 'ETH',
+                sellToken: 'DAI',
+                buyAmount: '1000',
+                sellAmount: '2000',
+                transactionHash: '0x123',
+                createdAt: new Date(),
+              },
+            ];
+          
+            jest.spyOn(swapRepository, 'find').mockResolvedValue(mockSwapData);
+          
+            const result = await service.getHistoricalData();
+            expect(result).toEqual(mockSwapData);
+          });
+          
     });
 });

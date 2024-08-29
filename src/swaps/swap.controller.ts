@@ -3,6 +3,7 @@ import { SwapService } from './swap.service';
 import { SwapResponse } from '@interfaces/swap.interface';
 import { TransactionResponse } from '@interfaces/transaction.interface';
 import { SwapDto } from '@dto/swap.dto';
+import { Swap } from './swap.entity';
 
 @Controller()
 export class SwapController {
@@ -27,8 +28,25 @@ export class SwapController {
     return this.swapService.getTransaction(txHash, chainId);
   }
 
+  
+  @Get('history')
+  async getHistoricalData(): Promise<Swap[]> {
+    return await this.swapService.getHistoricalData();
+  }
+
   @Post('swap')
   async executeSwap(@Body() swapDto: SwapDto) {
-    return this.swapService.executeSwap(swapDto);
+    const swapDetails = await this.swapService.executeSwap(swapDto);
+
+    await this.swapService.saveSwap({
+      chainId: swapDto.chainId,
+      buyToken: swapDto.buyToken,
+      sellToken: swapDto.sellToken,
+      sellAmount: swapDto.sellAmount,
+      buyAmount: swapDetails.buyAmount,
+      transactionHash: swapDetails.tradeHash,
+    });
+
+    return swapDetails
   }
 }
