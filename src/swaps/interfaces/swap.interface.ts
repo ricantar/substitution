@@ -55,4 +55,5 @@ export interface SwapFees {
 export interface SwapExecutionResponse {
   tradeHash: string;
   type: string;
+  buyAmount: string;
 }

@@ -7,10 +7,17 @@ import { TransactionResponse } from '@interfaces/transaction.interface';
 import { SwapDto } from '@dto/swap.dto';
 import { ethers } from 'ethers';
 import { getGroveCityRpcUrl } from '@utils/utils';
+import { Swap } from './swap.entity';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 
 @Injectable()
 export class SwapService {
-  constructor(private readonly httpService: HttpService) { }
+  constructor(
+    private readonly httpService: HttpService,
+    @InjectRepository(Swap)
+    private readonly swapRepository: Repository<Swap>,
+  ) {}
 
   async getQuote(chainId: string, buyTokenTicker: string, sellTokenTicker: string, sellAmount: string, taker: string): Promise<SwapResponse> {
 
@@ -34,6 +41,53 @@ export class SwapService {
       const errorMessage = error.response?.data?.message || 'Error fetching quote from 0x API';
       throw new BadRequestException(errorMessage);
     }
+  }
+
+  private mapToSwapResponse(data: any): SwapResponse {
+    return {
+      chainId: data.chainId,
+      price: data.price,
+      guaranteedPrice: data.guaranteedPrice,
+      estimatedPriceImpact: data.estimatedPriceImpact,
+      to: data.to,
+      data: data.data,
+      value: data.value,
+      gas: data.gas,
+      estimatedGas: data.estimatedGas,
+      gasPrice: data.gasPrice,
+      protocolFee: data.protocolFee,
+      minimumProtocolFee: data.minimumProtocolFee,
+      buyTokenAddress: data.buyTokenAddress,
+      sellTokenAddress: data.sellTokenAddress,
+      buyAmount: data.buyAmount,
+      sellAmount: data.sellAmount,
+      sources: data.sources.map((source: any) => ({
+        name: source.name,
+        proportion: source.proportion,
+      })),
+      orders: data.orders.map((order: any) => ({
+        makerToken: order.makerToken,
+        takerToken: order.takerToken,
+        makerAmount: order.makerAmount,
+        takerAmount: order.takerAmount,
+        fillData: {
+          tokenAddressPath: order.fillData.tokenAddressPath,
+          router: order.fillData.router,
+        },
+        source: order.source,
+        sourcePathId: order.sourcePathId,
+        type: order.type,
+      })),
+      allowanceTarget: data.allowanceTarget,
+      sellTokenToEthRate: data.sellTokenToEthRate,
+      buyTokenToEthRate: data.buyTokenToEthRate,
+      fees: {
+        zeroExFee: data.fees.zeroExFee,
+      },
+      grossPrice: data.grossPrice,
+      grossBuyAmount: data.grossBuyAmount,
+      grossSellAmount: data.grossSellAmount,
+    };
   }
 
   async getTransaction(txHash: string, chainId: string): Promise<TransactionResponse> {
@@ -94,57 +148,20 @@ export class SwapService {
       return {
         tradeHash: txResponse.hash,
         type: 'settler_metatransaction',
+        buyAmount: quote.buyAmount
       };
     } catch (error) {
       throw new BadRequestException(error.message || 'Error executing swap');
     }
   }
 
-
-  private mapToSwapResponse(data: any): SwapResponse {
-    return {
-      chainId: data.chainId,
-      price: data.price,
-      guaranteedPrice: data.guaranteedPrice,
-      estimatedPriceImpact: data.estimatedPriceImpact,
-      to: data.to,
-      data: data.data,
-      value: data.value,
-      gas: data.gas,
-      estimatedGas: data.estimatedGas,
-      gasPrice: data.gasPrice,
-      protocolFee: data.protocolFee,
-      minimumProtocolFee: data.minimumProtocolFee,
-      buyTokenAddress: data.buyTokenAddress,
-      sellTokenAddress: data.sellTokenAddress,
-      buyAmount: data.buyAmount,
-      sellAmount: data.sellAmount,
-      sources: data.sources.map((source: any) => ({
-        name: source.name,
-        proportion: source.proportion,
-      })),
-      orders: data.orders.map((order: any) => ({
-        makerToken: order.makerToken,
-        takerToken: order.takerToken,
-        makerAmount: order.makerAmount,
-        takerAmount: order.takerAmount,
-        fillData: {
-          tokenAddressPath: order.fillData.tokenAddressPath,
-          router: order.fillData.router,
-        },
-        source: order.source,
-        sourcePathId: order.sourcePathId,
-        type: order.type,
-      })),
-      allowanceTarget: data.allowanceTarget,
-      sellTokenToEthRate: data.sellTokenToEthRate,
-      buyTokenToEthRate: data.buyTokenToEthRate,
-      fees: {
-        zeroExFee: data.fees.zeroExFee,
-      },
-      grossPrice: data.grossPrice,
-      grossBuyAmount: data.grossBuyAmount,
-      grossSellAmount: data.grossSellAmount,
-    };
+  async saveSwap(swapData: Partial<Swap>): Promise<Swap> {
+    const swap = this.swapRepository.create(swapData);
+    return await this.swapRepository.save(swap);
   }
+
+  async getHistoricalData(): Promise<Swap[]> {
+    return await this.swapRepository.find();
+  }
+
 }
