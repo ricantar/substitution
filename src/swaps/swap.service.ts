@@ -2,7 +2,7 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { lastValueFrom, Observable } from 'rxjs';
 import { SwapExecutionResponse, SwapResponse } from '@interfaces/swap.interface';
-import { TOKEN_ADDRESS_MAP } from '@utils/chains-map';
+import { TOKEN_ADDRESS_MAP } from '@utils/utils';
 import { TransactionResponse } from '@interfaces/transaction.interface';
 import { SwapDto } from '@dto/swap.dto';
 import { ethers } from 'ethers';
